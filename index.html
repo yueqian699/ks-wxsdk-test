@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kuaishou WX JS-SDK signature self-test</title>
+</head>
+<body>
+<h3>Kuaishou WeChat JS-SDK 签名自测页（自签名模式）</h3>
+<p>页面 URL（不含#fragment）：<b id="cururl"></b></p>
+<pre id="log" style="background:#f5f5f5;padding:10px;white-space:pre-wrap;"></pre>
+<hr>
+<button id="btnLoc" style="font-size:18px;padding:10px 20px;">测试 wx.getLocation</button>
+<button id="btnScan" style="font-size:18px;padding:10px 20px;">测试 wx.scanQRCode</button>
+
+<script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
+<script>
+var logEl = document.getElementById('log');
+function log(m) { logEl.textContent += m + '\n'; console.log(m); }
+
+var PAGE_URL = location.href.split('#')[0];
+document.getElementById('cururl').textContent = PAGE_URL;
+
+// 备选手动模式：若 fetch 跨域被拦，填上 curl 拿到的参数即可
+var FALLBACK = null;
+
+var JS_API_LIST = [
+  'getLocation', 'openLocation', 'scanQRCode', 'chooseImage',
+  'previewImage', 'uploadImage', 'downloadImage', 'getNetworkType',
+  'openAddress', 'chooseWXPay', 'getApiList', 'checkJsApi',
+  'updateAppMessageShareData', 'updateTimelineShareData',
+  'onMenuShareAppMessage', 'onMenuShareTimeline'
+];
+
+function fetchSignature() {
+  if (FALLBACK) return Promise.resolve(FALLBACK);
+  log('正在向快手接口请求本页面 URL 的签名 ...');
+  return fetch('https://www.kuaishou.com/rest/wd/wemedia/signShareUrl', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+    body: JSON.stringify({ url: PAGE_URL })
+  }).then(function(r) { return r.json(); });
+}
+
+function run() {
+  log('页面 URL: ' + PAGE_URL);
+  fetchSignature().then(function(p) {
+    log('签名响应: ' + JSON.stringify(p));
+    if (p.result !== 1) { log('签名失败，终止'); return; }
+    log('发起 wx.config ...');
+    wx.config({
+      debug: true,
+      appId: p.appId,
+      timestamp: p.timestamp,
+      nonceStr: p.nonceStr,
+      signature: p.signature,
+      jsApiList: JS_API_LIST
+    });
+    wx.ready(function() {
+      log('=== wx.config OK —— 微信端验签通过 ===');
+      wx.checkJsApi({
+        jsApiList: JS_API_LIST,
+        success: function(res) {
+          log('checkJsApi 实际授权清单:');
+          var cr = res.checkResult || {};
+          for (var k in cr) log('  ' + k + ' = ' + cr[k]);
+        },
+        fail: function(e) { log('checkJsApi fail: ' + JSON.stringify(e)); }
+      });
+    });
+    wx.error(function(e) { log('!!! wx.config FAIL: ' + JSON.stringify(e)); });
+  }).catch(function(e) { log('获取签名失败: ' + e.message); });
+
+  document.getElementById('btnLoc').onclick = function() {
+    log('尝试 wx.getLocation ...');
+    wx.getLocation({
+      type: 'wgs84',
+      success: function(r) { log('getLocation OK: 纬度=' + r.latitude + ' 经度=' + r.longitude); },
+      fail: function(e) { log('getLocation fail: ' + JSON.stringify(e)); }
+    });
+  };
+  document.getElementById('btnScan').onclick = function() {
+    log('尝试 wx.scanQRCode ...');
+    wx.scanQRCode({
+      needResult: 0,
+      scanType: ['qrCode'],
+      success: function(r) { log('scanQRCode OK: ' + JSON.stringify(r)); },
+      fail: function(e) { log('scanQRCode fail: ' + JSON.stringify(e)); }
+    });
+  };
+}
+run();
+</script>
+</body>
+</html>
